@@ -1,0 +1,55 @@
+name: build-windows
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60  # Aseprite takes a long time to build
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Install Skia
+      shell: bash
+      run: |
+        # This part grabs the specific graphics library Aseprite needs
+        this_dir=$(cygpath "${{ github.workspace }}")
+        skia_url=$(source $this_dir/laf/misc/skia-url.sh | xargs)
+        skia_file=$(basename $skia_url)
+        curl --ssl-revoke-best-effort -L -o "$skia_file" "$skia_url"
+        unzip "$skia_file" -d skia
+
+    - name: Set up Ninja
+      uses: aseprite/get-ninja@main
+
+    - name: Set up MSVC (Visual Studio Compiler)
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configuring CMake
+      shell: bash
+      run: |
+        # Hardcoded for a standard Windows GUI build with Lua support
+        cmake -S . -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_TESTS=OFF \
+          -DENABLE_SCRIPTING=on \
+          -DENABLE_CCACHE=off \
+          -DLAF_BACKEND=skia \
+          -DSKIA_DIR=$(realpath skia) \
+          -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-x64)
+
+    - name: Compiling
+      shell: bash
+      run: |
+        cd build && ninja
+
+    - name: Uploading the Build
+      uses: actions/upload-artifact@v4
+      with:
+        name: Aseprite-Windows-Portable
+        path: |
+          build/bin/aseprite.exe
+          build/bin/data
